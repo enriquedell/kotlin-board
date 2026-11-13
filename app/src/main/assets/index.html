@@ -4,6 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>وایت‌برد آموزشی</title>
+<script>window.onerror=function(m,s,l){alert('خطا: '+m+' (خط '+l+')')}</script>
 <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
@@ -62,7 +63,6 @@ function snap(){hist.push(cv.toDataURL());if(hist.length>30)hist.shift()}
 function style(){ctx.strokeStyle=tool=='eraser'?'#fff':$('color').value;ctx.fillStyle=$('color').value;ctx.lineWidth=tool=='eraser'?$('size').value*4:+$('size').value;ctx.lineCap=ctx.lineJoin='round'}
 document.querySelectorAll('[data-t]').forEach(b=>b.onclick=()=>{tool=b.dataset.t;document.querySelectorAll('[data-t]').forEach(x=>x.classList.toggle('on',x==b))});
 
-// ---- متن ----
 cv.onpointerdown=e=>{
  const[x,y]=pos(e);
  if(tool=='text'){tx=x;ty=y;$('tin').value='';$('tbox').style.display='flex';setTimeout(()=>$('tin').focus(),50);return}
@@ -89,7 +89,6 @@ cv.onpointermove=e=>{
 };
 cv.onpointerup=cv.onpointercancel=()=>drawing=false;
 
-// ---- صفحه‌ها ----
 function load(url,cb){const i=new Image();i.onload=()=>{blank();ctx.drawImage(i,0,0);cb&&cb()};i.src=url}
 $('undo').onclick=()=>{if(hist.length)load(hist.pop())};
 $('clear').onclick=()=>{snap();blank()};
@@ -100,7 +99,6 @@ $('prev').onclick=()=>cur>0&&show(cur-1);
 $('next').onclick=()=>cur<pages.length-1&&show(cur+1);
 function insertPages(list){save();list.forEach((d,i)=>pages.splice(cur+1+i,0,d));show(cur+1)}
 
-// ---- ذخیره فایل (اندروید و مرورگر) ----
 function toB64(blob){return new Promise(r=>{const f=new FileReader();f.onload=()=>r(f.result.split(',')[1]);f.readAsDataURL(blob)})}
 async function saveBlob(blob,name){
  if(window.Android&&Android.saveFile){Android.saveFile(name,blob.type||'application/octet-stream',await toB64(blob))}
@@ -108,7 +106,6 @@ async function saveBlob(blob,name){
 }
 $('png').onclick=()=>cv.toBlob(b=>saveBlob(b,'board-'+Date.now()+'.png'));
 
-// ---- آپلود ----
 $('up').onclick=()=>$('file').click();
 function off(){const c=document.createElement('canvas');c.width=1600;c.height=900;const g=c.getContext('2d');g.fillStyle='#fff';g.fillRect(0,0,1600,900);return[c,g]}
 function fit(g,src,w,h){const s=Math.min(1600/w,900/h);const dw=w*s,dh=h*s;g.drawImage(src,(1600-dw)/2,(900-dh)/2,dw,dh)}
@@ -159,4 +156,42 @@ $('file').onchange=async e=>{
      const p=await pdf.getPage(n),vp=p.getViewport({scale:2}),c=document.createElement('canvas');
      c.width=vp.width;c.height=vp.height;
      await p.render({canvasContext:c.getContext('2d'),viewport:vp}).promise;
-     const[oc,g]=off();fit(g,c,c.width,c.height);
+     const[oc,g]=off();fit(g,c,c.width,c.height);list.push(oc.toDataURL());
+    }
+    insertPages(list);
+   }else if(f.type.startsWith('text/')||/\.(txt|md|csv)$/.test(name)){
+    await textPages(await readText(f));
+   }else{alert('این نوع فایل پشتیبانی نمی‌شود: '+f.name)}
+  }catch(err){alert('خطا در باز کردن فایل: '+err.message)}
+ }
+ e.target.value='';
+};
+
+let rec,chunks=[],tmr,keep,t0;
+$('recBtn').onclick=async()=>{
+ if(rec&&rec.state=='recording'){rec.stop();return}
+ if(!window.MediaRecorder){alert('این دستگاه از ضبط پشتیبانی نمی‌کند.');return}
+ const vs=cv.captureStream(30);
+ let mic=null;
+ try{mic=await navigator.mediaDevices.getUserMedia({audio:true});mic.getAudioTracks().forEach(t=>vs.addTrack(t))}
+ catch(_){alert('میکروفون در دسترس نیست؛ فقط تصویر تخته ضبط می‌شود.')}
+ const types=['video/webm;codecs=vp8,opus','video/webm;codecs=vp9,opus','video/webm','video/mp4'];
+ const mt=types.find(t=>MediaRecorder.isTypeSupported(t))||'';
+ chunks=[];
+ try{rec=new MediaRecorder(vs,mt?{mimeType:mt}:undefined)}catch(err){alert('ضبط شروع نشد: '+err.message);return}
+ rec.ondataavailable=e=>e.data.size&&chunks.push(e.data);
+ rec.onstop=async()=>{
+  clearInterval(tmr);clearInterval(keep);
+  vs.getTracks().forEach(t=>t.stop());mic&&mic.getTracks().forEach(t=>t.stop());
+  const type=(rec.mimeType||'video/webm').split(';')[0];
+  await saveBlob(new Blob(chunks,{type}),'lesson-'+Date.now()+(type.includes('mp4')?'.mp4':'.webm'));
+  $('recBtn').textContent='⏺ ضبط تخته + صدا';$('recBtn').classList.remove('rec');
+ };
+ rec.start(1000);t0=Date.now();
+ keep=setInterval(()=>{ctx.save();ctx.fillStyle='rgba(255,255,255,0.01)';ctx.fillRect(0,0,1,1);ctx.restore()},100);
+ tmr=setInterval(()=>{const s=Math.floor((Date.now()-t0)/1000);$('recBtn').textContent='⏹ توقف ('+Math.floor(s/60)+':'+String(s%60).padStart(2,'0')+')'},500);
+ $('recBtn').classList.add('rec');
+};
+</script>
+</body>
+</html>
